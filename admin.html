@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Admin Panel</title>
+<style>
+body{font-family:sans-serif;margin:20px}
+input,button{padding:5px;margin:5px}
+</style>
+</head>
+<body>
+<h2>Admin Panel - Quản lý User</h2>
+
+<h3>Tạo User</h3>
+<input type="text" id="create_username" placeholder="Username">
+<input type="text" id="create_password" placeholder="Password">
+<input type="number" id="create_days" placeholder="Số ngày">
+<input type="text" id="admin_key_create" placeholder="Admin Key">
+<button onclick="createUser()">Tạo</button>
+<p id="create_result"></p>
+
+<h3>Gia hạn User</h3>
+<input type="text" id="extend_username" placeholder="Username">
+<input type="number" id="extend_days" placeholder="Số ngày">
+<input type="text" id="admin_key_extend" placeholder="Admin Key">
+<button onclick="extendUser()">Gia hạn</button>
+<p id="extend_result"></p>
+
+<script>
+const baseUrl = ""; // Nếu chạy trên Render, để rỗng → same origin
+
+function createUser() {
+  const username = document.getElementById("create_username").value;
+  const password = document.getElementById("create_password").value;
+  const days = parseInt(document.getElementById("create_days").value);
+  const key = document.getElementById("admin_key_create").value;
+
+  fetch(baseUrl+"/create-user", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({username,password,days,key})
+  }).then(res=>res.json()).then(data=>{
+    document.getElementById("create_result").innerText=JSON.stringify(data);
+  });
+}
+
+function extendUser() {
+  const username = document.getElementById("extend_username").value;
+  const days = parseInt(document.getElementById("extend_days").value);
+  const key = document.getElementById("admin_key_extend").value;
+
+  fetch(baseUrl+"/extend", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({username,days,key})
+  }).then(res=>res.json()).then(data=>{
+    document.getElementById("extend_result").innerText=JSON.stringify(data);
+  });
+}
+</script>
+</body>
+</html>
