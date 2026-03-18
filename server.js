@@ -17,10 +17,10 @@ const ADMIN_KEY = process.env.ADMIN_KEY;
 // ===== DATABASE =====
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // cần nếu dùng cloud PostgreSQL
+  ssl: { rejectUnauthorized: false }
 });
 
-// Khởi tạo bảng users
+// Khởi tạo bảng users (nếu chưa có)
 (async () => {
   const query = `
     CREATE TABLE IF NOT EXISTS users (
@@ -91,7 +91,7 @@ app.post("/login", async (req, res) => {
     const user = rows[0];
     if (Date.now() > parseInt(user.expired_at)) return res.json({ error: "Hết hạn" });
 
-    // Chống share
+    // Chống share device
     if (user.device_id && user.device_id !== device_id) {
       return res.json({ error: "Tài khoản đã đăng nhập trên thiết bị khác" });
     }
@@ -103,7 +103,9 @@ app.post("/login", async (req, res) => {
 
     const channel = "room_" + username;
     const uid = Math.floor(Math.random() * 10000);
-    const expireTime = 3600;
+
+    // ===== TOKEN 12H =====
+    const expireTime = 12 * 3600; // 12h in seconds
     const currentTime = Math.floor(Date.now() / 1000);
     const privilegeExpireTime = currentTime + expireTime;
 
