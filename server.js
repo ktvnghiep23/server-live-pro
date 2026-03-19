@@ -161,58 +161,103 @@ app.post("/login", async (req, res) => {
 // ===== WEB ADMIN PRO =====
 app.get("/", (req, res) => {
   res.send(`
-  <h2>🔐 ADMIN PANEL</h2>
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Panel</title>
 
-  <div style="margin-bottom:20px;">
-    <label>🔑 Admin Key:</label><br>
-    <input id="key" placeholder="Nhập admin key"><br><br>
-    <button onclick="login()">Đăng nhập</button>
-  </div>
+<style>
+body{
+  font-family: Arial;
+  background:#f5f6fa;
+  padding:20px;
+}
+.container{
+  max-width:500px;
+  margin:auto;
+}
+.card{
+  background:white;
+  padding:15px;
+  margin-bottom:15px;
+  border-radius:10px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.1);
+}
+h2,h3{margin-top:0}
+input{
+  width:100%;
+  padding:10px;
+  margin:5px 0;
+  border-radius:6px;
+  border:1px solid #ccc;
+}
+button{
+  width:100%;
+  padding:10px;
+  border:none;
+  border-radius:6px;
+  background:#3498db;
+  color:white;
+  font-weight:bold;
+  cursor:pointer;
+}
+button:hover{background:#2980b9}
+.user{
+  border:1px solid #ddd;
+  padding:10px;
+  margin:5px 0;
+  border-radius:6px;
+}
+.green{color:green}
+.red{color:red}
+</style>
 
-  <div id="panel" style="display:none;">
+</head>
 
-    <hr>
-    <h3>➕ TẠO TÀI KHOẢN</h3>
+<body>
 
-    <label>👤 Username:</label><br>
-    <input id="u" placeholder="vd: khach1"><br>
+<div class="container">
 
-    <label>🔒 Password:</label><br>
-    <input id="p" placeholder="vd: 123456"><br>
+<div class="card">
+<h2>🔐 Admin Login</h2>
+<input id="key" placeholder="Nhập admin key">
+<button onclick="login()">Đăng nhập</button>
+</div>
 
-    <label>📅 Số ngày sử dụng:</label><br>
-    <input id="d" type="number" placeholder="vd: 30"><br><br>
+<div id="panel" style="display:none;">
 
-    <button onclick="create()">Tạo tài khoản</button>
+<div class="card">
+<h3>➕ Tạo tài khoản</h3>
+<input id="u" placeholder="Username">
+<input id="p" placeholder="Password">
+<input id="d" type="number" placeholder="Số ngày">
+<button onclick="create()">Tạo</button>
+</div>
 
-    <hr>
-    <h3>🔄 GIA HẠN</h3>
+<div class="card">
+<h3>🔄 Gia hạn</h3>
+<input id="u2" placeholder="Username">
+<input id="d2" type="number" placeholder="Số ngày thêm">
+<button onclick="extend()">Gia hạn</button>
+</div>
 
-    <label>👤 Username:</label><br>
-    <input id="u2" placeholder="Nhập username"><br>
+<div class="card">
+<h3>📋 Danh sách user</h3>
+<button onclick="load()">Load danh sách</button>
+<div id="list"></div>
+</div>
 
-    <label>📅 Thêm số ngày:</label><br>
-    <input id="d2" type="number" placeholder="vd: 7"><br><br>
+</div>
 
-    <button onclick="extend()">Gia hạn</button>
-
-    <hr>
-    <h3>📋 DANH SÁCH USER</h3>
-
-    <button onclick="load()">🔄 Load danh sách</button>
-    <div id="list" style="margin-top:10px;"></div>
-
-  </div>
+</div>
 
 <script>
 let k="";
 
 function login(){
   k = document.getElementById('key').value;
-  if(!k){
-    alert("Nhập admin key");
-    return;
-  }
+  if(!k){ alert("Nhập key"); return; }
   panel.style.display='block';
 }
 
@@ -249,17 +294,20 @@ async function load(){
 
   let html="";
   d.forEach(x=>{
-    let date=new Date(parseInt(x.expired_at)).toLocaleDateString();
+    let remain = Math.floor((x.expired_at - Date.now())/86400000);
+    let status = remain > 0 
+      ? "<span class='green'>Còn " + remain + " ngày</span>"
+      : "<span class='red'>Hết hạn</span>";
 
-    html+=\`
-    <div style="border:1px solid #ccc;padding:8px;margin:5px;border-radius:5px">
-      👤 <b>\${x.username}</b><br>
-      ⏰ Hết hạn: \${date}<br>
-      <button onclick="del('\${x.username}')">❌ Xoá</button>
+    html += \`
+    <div class="user">
+      <b>\${x.username}</b><br>
+      \${status}<br>
+      <button onclick="del('\${x.username}')">Xoá</button>
     </div>\`;
   });
 
-  list.innerHTML=html;
+  list.innerHTML = html;
 }
 
 async function del(u){
@@ -275,9 +323,11 @@ async function del(u){
   load();
 }
 </script>
+
+</body>
+</html>
   `);
 });
-
 // ===== START =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("Server chạy cổng " + PORT));
