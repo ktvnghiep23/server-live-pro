@@ -10,14 +10,13 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// ===== CONFIG =====
+// ===== CONFIG (.env) =====
 const APP_ID = process.env.APP_ID;
 const APP_CERTIFICATE = process.env.APP_CERTIFICATE;
-const JWT_SECRET = "secret120512"; // đổi lại cho bảo mật
+const JWT_SECRET = process.env.JWT_SECRET;
 
-// ===== ADMIN LOGIN =====
-const ADMIN_USER = "adminDaiCaBach";
-const ADMIN_PASS = "210521";
+const ADMIN_USER = process.env.ADMIN_USER;
+const ADMIN_PASS = process.env.ADMIN_PASS;
 
 // ===== DATABASE =====
 const pool = new Pool({
@@ -37,10 +36,12 @@ const pool = new Pool({
   `);
 })();
 
-// ===== MIDDLEWARE CHECK TOKEN =====
+// ===== AUTH MIDDLEWARE =====
 function auth(req, res, next) {
-  const token = req.headers["authorization"];
-  if (!token) return res.json({ error: "No token" });
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) return res.json({ error: "No token" });
+
+  const token = authHeader.split(" ")[1];
 
   try {
     jwt.verify(token, JWT_SECRET);
@@ -56,10 +57,10 @@ app.post("/admin-login", (req, res) => {
 
   if (username === ADMIN_USER && password === ADMIN_PASS) {
     const token = jwt.sign({ user: "admin" }, JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token });
-  } else {
-    res.json({ error: "Sai admin" });
+    return res.json({ token });
   }
+
+  res.json({ error: "Sai admin" });
 });
 
 // ===== CREATE USER =====
@@ -78,7 +79,7 @@ app.post("/create-user", auth, async (req, res) => {
   }
 });
 
-// ===== EXTEND =====
+// ===== EXTEND USER =====
 app.post("/extend", auth, async (req, res) => {
   const { username, days } = req.body;
 
@@ -107,7 +108,7 @@ app.post("/delete-user", auth, async (req, res) => {
   res.json({ message: "Đã xoá" });
 });
 
-// ===== GET USERS + SEARCH =====
+// ===== GET USERS =====
 app.get("/users", auth, async (req, res) => {
   const q = req.query.q || "";
 
@@ -152,7 +153,7 @@ app.post("/login", async (req, res) => {
   res.json({ token, channel, uid });
 });
 
-// ===== WEB ADMIN PRO =====
+// ===== WEB ADMIN =====
 app.get("/", (req, res) => {
 res.send(`
 <!DOCTYPE html>
@@ -160,17 +161,59 @@ res.send(`
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:Arial;background:#f5f6fa;padding:20px}
-.card{background:white;padding:15px;margin:10px 0;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.1)}
-input{width:100%;padding:10px;margin:5px 0;border-radius:6px;border:1px solid #ccc}
-button{padding:10px;width:100%;border:none;border-radius:6px;background:#3498db;color:white}
-.user{border:1px solid #ddd;padding:10px;margin-top:5px;border-radius:6px}
+body{
+  font-family:Arial;
+  background:#f5f6fa;
+  display:flex;
+  justify-content:center;
+}
+
+.container{
+  width:100%;
+  max-width:500px;
+}
+
+.card{
+  background:white;
+  padding:15px;
+  margin:10px 0;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.1)
+}
+
+input{
+  width:100%;
+  padding:10px;
+  margin:5px 0;
+  border-radius:6px;
+  border:1px solid #ccc
+}
+
+button{
+  padding:10px;
+  width:100%;
+  border:none;
+  border-radius:6px;
+  background:#3498db;
+  color:white;
+  margin-top:5px;
+}
+
+.user{
+  border:1px solid #ddd;
+  padding:10px;
+  margin-top:5px;
+  border-radius:6px
+}
+
 .green{color:green}
 .red{color:red}
 </style>
 </head>
 
 <body>
+
+<div class="container">
 
 <div class="card">
 <h3>🔐 Admin Login</h3>
@@ -182,8 +225,8 @@ button{padding:10px;width:100%;border:none;border-radius:6px;background:#3498db;
 <div id="panel" style="display:none">
 
 <div class="card">
-<h3>🔍 Tìm / Lọc tài khoản</h3>
-<input id="search" placeholder="Nhập username để lọc">
+<h3>🔍 Tìm / Lọc</h3>
+<input id="search" placeholder="username">
 <button onclick="load()">Tìm</button>
 </div>
 
@@ -197,8 +240,10 @@ button{padding:10px;width:100%;border:none;border-radius:6px;background:#3498db;
 
 <div class="card">
 <h3>📋 Danh sách</h3>
-<button onclick="load()">Load tất cả</button>
+<button onclick="load()">Load</button>
 <div id="list"></div>
+</div>
+
 </div>
 
 </div>
@@ -206,6 +251,7 @@ button{padding:10px;width:100%;border:none;border-radius:6px;background:#3498db;
 <script>
 let token="";
 
+// LOGIN
 async function login(){
  let r = await fetch('/admin-login',{
   method:'POST',
@@ -218,54 +264,51 @@ async function login(){
    token=d.token;
    panel.style.display='block';
  }else{
-   alert("Sai tài khoản admin");
+   alert("Sai admin");
  }
 }
 
-// ===== LOAD + SEARCH =====
+// LOAD
 async function load(){
  let keyword = search.value || "";
 
  let r = await fetch('/users?q='+keyword,{
-  headers:{'Authorization':token}
+  headers:{'Authorization':'Bearer '+token}
  });
 
  let data = await r.json();
 
  let html="";
 
- if(data.length === 0){
-   html = "<p>❌ Không có tài khoản</p>";
- }else{
-   data.forEach(x=>{
-     let remain = Math.floor((x.expired_at - Date.now()) / 86400000);
+ data.forEach(x=>{
+   let remain = Math.floor((x.expired_at - Date.now()) / 86400000);
+   let date = new Date(parseInt(x.expired_at)).toLocaleString();
 
-     let date = new Date(parseInt(x.expired_at)).toLocaleDateString();
+   let status = remain > 0
+     ? "<span class='green'>Còn " + remain + " ngày</span>"
+     : "<span class='red'>Hết hạn</span>";
 
-     let status = remain > 0
-       ? "<span class='green'>Còn " + remain + " ngày</span>"
-       : "<span class='red'>Hết hạn</span>";
+   html += \`
+   <div class="user">
+     👤 <b>\${x.username}</b><br>
+     📅 \${date}<br>
+     ⏳ \${status}<br><br>
 
-     html += \`
-     <div class="user">
-       👤 <b>\${x.username}</b><br>
-       📅 Hết hạn: \${date}<br>
-       ⏳ \${status}<br><br>
-       <button onclick="del('\${x.username}')">❌ Xoá</button>
-     </div>\`;
-   });
- }
+     <button onclick="extendUser('\${x.username}')">➕ Gia hạn</button>
+     <button onclick="delUser('\${x.username}')">❌ Xoá</button>
+   </div>\`;
+ });
 
  list.innerHTML = html;
 }
 
-// ===== CREATE =====
+// CREATE
 async function create(){
  let r = await fetch('/create-user',{
   method:'POST',
   headers:{
     'Content-Type':'application/json',
-    'Authorization':token
+    'Authorization':'Bearer '+token
   },
   body:JSON.stringify({
     username:u.value,
@@ -279,19 +322,41 @@ async function create(){
  load();
 }
 
-// ===== DELETE =====
-async function del(u){
+// DELETE
+async function delUser(u){
  if(!confirm("Xoá " + u + "?")) return;
 
  await fetch('/delete-user',{
   method:'POST',
   headers:{
     'Content-Type':'application/json',
-    'Authorization':token
+    'Authorization':'Bearer '+token
   },
   body:JSON.stringify({username:u})
  });
 
+ load();
+}
+
+// EXTEND
+async function extendUser(username){
+ let days = prompt("Nhập số ngày:");
+
+ if(!days) return;
+
+ await fetch('/extend',{
+  method:'POST',
+  headers:{
+    'Content-Type':'application/json',
+    'Authorization':'Bearer '+token
+  },
+  body:JSON.stringify({
+    username:username,
+    days:parseInt(days)
+  })
+ });
+
+ alert("Gia hạn OK");
  load();
 }
 </script>
@@ -300,8 +365,7 @@ async function del(u){
 </html>
 `);
 });
+
 // ===== START =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("Server chạy cổng " + PORT));
-
-
