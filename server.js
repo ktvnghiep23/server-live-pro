@@ -4,6 +4,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
 const { RtcTokenBuilder, RtcRole } = require("agora-access-token");
 
 const app = express();
@@ -24,348 +25,148 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// ===== INIT TABLE =====
+// ===== INIT TABLES =====
 (async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       username TEXT UNIQUE,
       password TEXT,
-      expired_at BIGINT
+      expired_at BIGINT,
+      devices TEXT DEFAULT '[]'
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id SERIAL PRIMARY KEY,
+      username TEXT,
+      action TEXT,
+      time BIGINT
     );
   `);
 })();
 
+// ===== LOG HELPER =====
+async function logAction(username, action){
+  await pool.query(
+    "INSERT INTO logs(username, action, time) VALUES($1,$2,$3)",
+    [username, action, Date.now()]
+  );
+}
+
 // ===== AUTH MIDDLEWARE =====
-function auth(req, res, next) {
+function auth(req, res, next){
   const authHeader = req.headers["authorization"];
-  if (!authHeader) return res.json({ error: "No token" });
-
+  if(!authHeader) return res.json({error:"No token"});
   const token = authHeader.split(" ")[1];
-
-  try {
+  try{
     jwt.verify(token, JWT_SECRET);
     next();
-  } catch {
-    res.json({ error: "Token sai" });
+  }catch{
+    res.json({error:"Token sai"});
   }
 }
 
 // ===== ADMIN LOGIN =====
-app.post("/admin-login", (req, res) => {
-  const { username, password } = req.body;
-
-  if (username === ADMIN_USER && password === ADMIN_PASS) {
-    const token = jwt.sign({ user: "admin" }, JWT_SECRET, { expiresIn: "7d" });
-    return res.json({ token });
+app.post("/admin-login", (req,res)=>{
+  const {username,password} = req.body;
+  if(username===ADMIN_USER && password===ADMIN_PASS){
+    const token = jwt.sign({user:"admin"}, JWT_SECRET, {expiresIn:"7d"});
+    logAction(username,"Admin login");
+    return res.json({token});
   }
-
-  res.json({ error: "Sai admin" });
+  res.json({error:"Sai admin"});
 });
 
 // ===== CREATE USER =====
-app.post("/create-user", auth, async (req, res) => {
-  const { username, password, days } = req.body;
-  const expired = Date.now() + days * 86400000;
-
-  try {
+app.post("/create-user", auth, async(req,res)=>{
+  const {username,password,days} = req.body;
+  const expired = Date.now() + days*86400000;
+  const hashed = await bcrypt.hash(password,10);
+  try{
     await pool.query(
-      "INSERT INTO users (username,password,expired_at) VALUES ($1,$2,$3)",
-      [username, password, expired]
+      "INSERT INTO users(username,password,expired_at) VALUES($1,$2,$3)",
+      [username,hashed,expired]
     );
-    res.json({ message: "Đã tạo" });
-  } catch (err) {
-    res.json({ error: err.detail });
+    await logAction("admin","Tạo user "+username);
+    res.json({message:"Đã tạo"});
+  }catch(err){
+    res.json({error:err.detail});
   }
 });
 
 // ===== EXTEND USER =====
-app.post("/extend", auth, async (req, res) => {
-  const { username, days } = req.body;
-
-  const { rows } = await pool.query(
-    "SELECT * FROM users WHERE username=$1",
-    [username]
-  );
-
-  if (rows.length === 0) return res.json({ error: "Không có user" });
-
-  const newTime = parseInt(rows[0].expired_at) + days * 86400000;
-
-  await pool.query(
-    "UPDATE users SET expired_at=$1 WHERE username=$2",
-    [newTime, username]
-  );
-
-  res.json({ message: "Gia hạn OK" });
+app.post("/extend", auth, async(req,res)=>{
+  const {username,days} = req.body;
+  const {rows} = await pool.query("SELECT * FROM users WHERE username=$1",[username]);
+  if(rows.length===0) return res.json({error:"Không có user"});
+  const newTime = parseInt(rows[0].expired_at) + days*86400000;
+  await pool.query("UPDATE users SET expired_at=$1 WHERE username=$2",[newTime,username]);
+  await logAction("admin","Gia hạn user "+username+" thêm "+days+" ngày");
+  res.json({message:"Gia hạn OK"});
 });
 
-// ===== DELETE =====
-app.post("/delete-user", auth, async (req, res) => {
-  const { username } = req.body;
-
-  await pool.query("DELETE FROM users WHERE username=$1", [username]);
-  res.json({ message: "Đã xoá" });
+// ===== DELETE USER =====
+app.post("/delete-user", auth, async(req,res)=>{
+  const {username} = req.body;
+  await pool.query("DELETE FROM users WHERE username=$1",[username]);
+  await logAction("admin","Xoá user "+username);
+  res.json({message:"Đã xoá"});
 });
 
 // ===== GET USERS =====
-app.get("/users", auth, async (req, res) => {
-  const q = req.query.q || "";
-
-  const { rows } = await pool.query(
+app.get("/users", auth, async(req,res)=>{
+  const q = req.query.q||"";
+  const {rows} = await pool.query(
     "SELECT * FROM users WHERE username ILIKE $1 ORDER BY id DESC",
-    ["%" + q + "%"]
+    ["%"+q+"%"]
   );
+  res.json(rows);
+});
 
+// ===== GET LOGS =====
+app.get("/logs", auth, async(req,res)=>{
+  const {rows} = await pool.query(
+    "SELECT * FROM logs ORDER BY id DESC LIMIT 100"
+  );
   res.json(rows);
 });
 
 // ===== LOGIN USER =====
-app.post("/login", async (req, res) => {
-  const { username, password } = req.body;
-
-  const { rows } = await pool.query(
-    "SELECT * FROM users WHERE username=$1 AND password=$2",
-    [username, password]
-  );
-
-  if (rows.length === 0) return res.json({ error: "Sai tài khoản" });
-
+app.post("/login", async(req,res)=>{
+  const {username,password,deviceId} = req.body;
+  const {rows} = await pool.query("SELECT * FROM users WHERE username=$1",[username]);
+  if(rows.length===0) return res.json({error:"Sai tài khoản"});
   const user = rows[0];
-  if (Date.now() > user.expired_at)
-    return res.json({ error: "Hết hạn" });
+  if(Date.now() > user.expired_at) return res.json({error:"Hết hạn"});
 
-  const channel = "room_" + username;
-  const uid = Math.floor(Math.random() * 10000);
+  // CHECK THIẾT BỊ
+  let devices = JSON.parse(user.devices||"[]");
+  if(!devices.includes(deviceId)){
+    if(devices.length>=5) return res.json({error:"Đã đạt 5 thiết bị"});
+    devices.push(deviceId);
+    await pool.query("UPDATE users SET devices=$1 WHERE username=$2",[JSON.stringify(devices),username]);
+  }
 
-  const expireTime = 12 * 3600;
-  const now = Math.floor(Date.now() / 1000);
-
+  // Tạo token Agora 12h
+  const channel = "room_"+username;
+  const uid = Math.floor(Math.random()*10000);
+  const expireTime = 12*3600;
+  const now = Math.floor(Date.now()/1000);
   const token = RtcTokenBuilder.buildTokenWithUid(
     APP_ID,
     APP_CERTIFICATE,
     channel,
     uid,
     RtcRole.PUBLISHER,
-    now + expireTime
+    now+expireTime
   );
 
-  res.json({ token, channel, uid });
+  await logAction(username,"Login user");
+
+  res.json({token,channel,uid});
 });
 
-// ===== WEB ADMIN =====
-app.get("/", (req, res) => {
-res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{
-  font-family:Arial;
-  background:#f5f6fa;
-  display:flex;
-  justify-content:center;
-}
-
-.container{
-  width:100%;
-  max-width:500px;
-}
-
-.card{
-  background:white;
-  padding:15px;
-  margin:10px 0;
-  border-radius:10px;
-  box-shadow:0 2px 6px rgba(0,0,0,0.1)
-}
-
-input{
-  width:100%;
-  padding:10px;
-  margin:5px 0;
-  border-radius:6px;
-  border:1px solid #ccc
-}
-
-button{
-  padding:10px;
-  width:100%;
-  border:none;
-  border-radius:6px;
-  background:#3498db;
-  color:white;
-  margin-top:5px;
-}
-
-.user{
-  border:1px solid #ddd;
-  padding:10px;
-  margin-top:5px;
-  border-radius:6px
-}
-
-.green{color:green}
-.red{color:red}
-</style>
-</head>
-
-<body>
-
-<div class="container">
-
-<div class="card">
-<h3>🔐 Admin Login</h3>
-<input id="user" placeholder="admin">
-<input id="pass" placeholder="password">
-<button onclick="login()">Đăng nhập</button>
-</div>
-
-<div id="panel" style="display:none">
-
-<div class="card">
-<h3>🔍 Tìm / Lọc</h3>
-<input id="search" placeholder="username">
-<button onclick="load()">Tìm</button>
-</div>
-
-<div class="card">
-<h3>➕ Tạo tài khoản</h3>
-<input id="u" placeholder="username">
-<input id="p" placeholder="password">
-<input id="d" type="number" placeholder="số ngày">
-<button onclick="create()">Tạo</button>
-</div>
-
-<div class="card">
-<h3>📋 Danh sách</h3>
-<button onclick="load()">Load</button>
-<div id="list"></div>
-</div>
-
-</div>
-
-</div>
-
-<script>
-let token="";
-
-// LOGIN
-async function login(){
- let r = await fetch('/admin-login',{
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({username:user.value,password:pass.value})
- });
- let d = await r.json();
-
- if(d.token){
-   token=d.token;
-   panel.style.display='block';
- }else{
-   alert("Sai admin");
- }
-}
-
-// LOAD
-async function load(){
- let keyword = search.value || "";
-
- let r = await fetch('/users?q='+keyword,{
-  headers:{'Authorization':'Bearer '+token}
- });
-
- let data = await r.json();
-
- let html="";
-
- data.forEach(x=>{
-   let remain = Math.floor((x.expired_at - Date.now()) / 86400000);
-   let date = new Date(parseInt(x.expired_at)).toLocaleString();
-
-   let status = remain > 0
-     ? "<span class='green'>Còn " + remain + " ngày</span>"
-     : "<span class='red'>Hết hạn</span>";
-
-   html += \`
-   <div class="user">
-     👤 <b>\${x.username}</b><br>
-     📅 \${date}<br>
-     ⏳ \${status}<br><br>
-
-     <button onclick="extendUser('\${x.username}')">➕ Gia hạn</button>
-     <button onclick="delUser('\${x.username}')">❌ Xoá</button>
-   </div>\`;
- });
-
- list.innerHTML = html;
-}
-
-// CREATE
-async function create(){
- let r = await fetch('/create-user',{
-  method:'POST',
-  headers:{
-    'Content-Type':'application/json',
-    'Authorization':'Bearer '+token
-  },
-  body:JSON.stringify({
-    username:u.value,
-    password:p.value,
-    days:parseInt(d.value)
-  })
- });
-
- let dres = await r.json();
- alert(dres.message || dres.error);
- load();
-}
-
-// DELETE
-async function delUser(u){
- if(!confirm("Xoá " + u + "?")) return;
-
- await fetch('/delete-user',{
-  method:'POST',
-  headers:{
-    'Content-Type':'application/json',
-    'Authorization':'Bearer '+token
-  },
-  body:JSON.stringify({username:u})
- });
-
- load();
-}
-
-// EXTEND
-async function extendUser(username){
- let days = prompt("Nhập số ngày:");
-
- if(!days) return;
-
- await fetch('/extend',{
-  method:'POST',
-  headers:{
-    'Content-Type':'application/json',
-    'Authorization':'Bearer '+token
-  },
-  body:JSON.stringify({
-    username:username,
-    days:parseInt(days)
-  })
- });
-
- alert("Gia hạn OK");
- load();
-}
-</script>
-
-</body>
-</html>
-`);
-});
-
-// ===== START =====
+// ===== START SERVER =====
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server chạy cổng " + PORT));
+app.listen(PORT,()=>console.log("Server chạy cổng "+PORT));

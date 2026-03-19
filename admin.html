@@ -1,62 +1,205 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Admin Panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:sans-serif;margin:20px}
-input,button{padding:5px;margin:5px}
+body{
+  font-family:Arial;
+  background:#f5f6fa;
+  display:flex;
+  justify-content:center;
+  padding:20px;
+}
+
+.container{
+  width:100%;
+  max-width:600px;
+}
+
+.card{
+  background:white;
+  padding:15px;
+  margin:10px 0;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.1)
+}
+
+input{
+  width:100%;
+  padding:10px;
+  margin:5px 0;
+  border-radius:6px;
+  border:1px solid #ccc
+}
+
+button{
+  padding:10px;
+  width:100%;
+  border:none;
+  border-radius:6px;
+  background:#3498db;
+  color:white;
+  margin-top:5px;
+  cursor:pointer;
+}
+
+.user{
+  border:1px solid #ddd;
+  padding:10px;
+  margin-top:5px;
+  border-radius:6px
+}
+
+.green{color:green}
+.red{color:red}
+.small{font-size:12px;color:#555}
 </style>
 </head>
+
 <body>
-<h2>Admin Panel - Quản lý User</h2>
 
-<h3>Tạo User</h3>
-<input type="text" id="create_username" placeholder="Username">
-<input type="text" id="create_password" placeholder="Password">
-<input type="number" id="create_days" placeholder="Số ngày">
-<input type="text" id="admin_key_create" placeholder="Admin Key">
+<div class="container">
+
+<div class="card">
+<h3>🔐 Admin Login</h3>
+<input id="user" placeholder="admin">
+<input id="pass" type="password" placeholder="password">
+<button onclick="login()">Đăng nhập</button>
+</div>
+
+<div id="panel" style="display:none">
+
+<div class="card">
+<h3>🔍 Tìm / Lọc User</h3>
+<input id="search" placeholder="username">
+<button onclick="loadUsers()">Tìm</button>
+</div>
+
+<div class="card">
+<h3>➕ Tạo tài khoản</h3>
+<input id="u" placeholder="username">
+<input id="p" type="password" placeholder="password">
+<input id="d" type="number" placeholder="số ngày">
 <button onclick="createUser()">Tạo</button>
-<p id="create_result"></p>
+</div>
 
-<h3>Gia hạn User</h3>
-<input type="text" id="extend_username" placeholder="Username">
-<input type="number" id="extend_days" placeholder="Số ngày">
-<input type="text" id="admin_key_extend" placeholder="Admin Key">
-<button onclick="extendUser()">Gia hạn</button>
-<p id="extend_result"></p>
+<div class="card">
+<h3>📋 Danh sách User</h3>
+<button onclick="loadUsers()">Load tất cả</button>
+<div id="list"></div>
+</div>
+
+<div class="card">
+<h3>📝 Log Hoạt động</h3>
+<button onclick="loadLogs()">Load Log</button>
+<div id="loglist" style="max-height:300px;overflow:auto"></div>
+</div>
+
+</div>
 
 <script>
-const baseUrl = ""; // Nếu chạy trên Render, để rỗng → same origin
+let token="";
 
-function createUser() {
-  const username = document.getElementById("create_username").value;
-  const password = document.getElementById("create_password").value;
-  const days = parseInt(document.getElementById("create_days").value);
-  const key = document.getElementById("admin_key_create").value;
-
-  fetch(baseUrl+"/create-user", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({username,password,days,key})
-  }).then(res=>res.json()).then(data=>{
-    document.getElementById("create_result").innerText=JSON.stringify(data);
+// ===== LOGIN ADMIN =====
+async function login(){
+  let r = await fetch('/admin-login',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:user.value,password:pass.value})
   });
+  let d = await r.json();
+  if(d.token){
+    token=d.token;
+    panel.style.display='block';
+    alert("Đăng nhập thành công");
+    loadUsers();
+    loadLogs();
+  } else alert(d.error || "Sai admin");
 }
 
-function extendUser() {
-  const username = document.getElementById("extend_username").value;
-  const days = parseInt(document.getElementById("extend_days").value);
-  const key = document.getElementById("admin_key_extend").value;
-
-  fetch(baseUrl+"/extend", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({username,days,key})
-  }).then(res=>res.json()).then(data=>{
-    document.getElementById("extend_result").innerText=JSON.stringify(data);
+// ===== LOAD USERS =====
+async function loadUsers(){
+  let keyword = search.value || "";
+  let r = await fetch('/users?q='+keyword,{
+    headers:{'Authorization':'Bearer '+token}
   });
+  let data = await r.json();
+  let html="";
+  data.forEach(x=>{
+    let remain = Math.floor((x.expired_at - Date.now()) / 86400000);
+    let date = new Date(parseInt(x.expired_at)).toLocaleString();
+    let status = remain>0 ? "<span class='green'>Còn "+remain+" ngày</span>" : "<span class='red'>Hết hạn</span>";
+    let devices = x.devices ? JSON.parse(x.devices) : [];
+    html += `
+      <div class="user">
+        👤 <b>${x.username}</b><br>
+        ⏳ ${status}<br>
+        📅 Hết hạn: ${date}<br>
+        📱 Thiết bị: ${devices.length}/5 ${devices.join(", ")}<br><br>
+        <button onclick="extendUser('${x.username}')">➕ Gia hạn</button>
+        <button onclick="deleteUser('${x.username}')">❌ Xoá</button>
+      </div>`;
+  });
+  list.innerHTML = html;
+}
+
+// ===== CREATE USER =====
+async function createUser(){
+  let r = await fetch('/create-user',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+    body:JSON.stringify({
+      username:u.value,
+      password:p.value,
+      days:parseInt(d.value)
+    })
+  });
+  let dres = await r.json();
+  alert(dres.message || dres.error);
+  loadUsers();
+}
+
+// ===== DELETE USER =====
+async function deleteUser(username){
+  if(!confirm("Xoá "+username+"?")) return;
+  let r = await fetch('/delete-user',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+    body:JSON.stringify({username})
+  });
+  let dres = await r.json();
+  alert(dres.message || dres.error);
+  loadUsers();
+}
+
+// ===== EXTEND USER =====
+async function extendUser(username){
+  let days = prompt("Nhập số ngày:");
+  if(!days) return;
+  let r = await fetch('/extend',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+    body:JSON.stringify({username, days:parseInt(days)})
+  });
+  let dres = await r.json();
+  alert(dres.message || dres.error);
+  loadUsers();
+}
+
+// ===== LOAD LOGS =====
+async function loadLogs(){
+  let r = await fetch('/logs',{
+    headers:{'Authorization':'Bearer '+token}
+  });
+  let data = await r.json();
+  let html="";
+  data.forEach(x=>{
+    let time = new Date(parseInt(x.time)).toLocaleString();
+    html += `<div class="small">[${time}] ${x.username}: ${x.action}</div>`;
+  });
+  loglist.innerHTML = html;
 }
 </script>
+
 </body>
 </html>
