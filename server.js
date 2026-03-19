@@ -161,23 +161,47 @@ app.post("/login", async (req, res) => {
 // ===== WEB ADMIN PRO =====
 app.get("/", (req, res) => {
   res.send(`
-  <h2>ADMIN PANEL</h2>
+  <h2>🔐 ADMIN PANEL</h2>
 
-  <input id="key" placeholder="Admin key">
-  <button onclick="login()">Login</button>
+  <div style="margin-bottom:20px;">
+    <label>🔑 Admin Key:</label><br>
+    <input id="key" placeholder="Nhập admin key"><br><br>
+    <button onclick="login()">Đăng nhập</button>
+  </div>
 
   <div id="panel" style="display:none;">
-    <h3>Tạo user</h3>
-    <input id="u"><input id="p"><input id="d">
-    <button onclick="create()">Tạo</button>
 
-    <h3>Gia hạn</h3>
-    <input id="u2"><input id="d2">
+    <hr>
+    <h3>➕ TẠO TÀI KHOẢN</h3>
+
+    <label>👤 Username:</label><br>
+    <input id="u" placeholder="vd: khach1"><br>
+
+    <label>🔒 Password:</label><br>
+    <input id="p" placeholder="vd: 123456"><br>
+
+    <label>📅 Số ngày sử dụng:</label><br>
+    <input id="d" type="number" placeholder="vd: 30"><br><br>
+
+    <button onclick="create()">Tạo tài khoản</button>
+
+    <hr>
+    <h3>🔄 GIA HẠN</h3>
+
+    <label>👤 Username:</label><br>
+    <input id="u2" placeholder="Nhập username"><br>
+
+    <label>📅 Thêm số ngày:</label><br>
+    <input id="d2" type="number" placeholder="vd: 7"><br><br>
+
     <button onclick="extend()">Gia hạn</button>
 
-    <h3>Danh sách</h3>
-    <button onclick="load()">Load</button>
-    <div id="list"></div>
+    <hr>
+    <h3>📋 DANH SÁCH USER</h3>
+
+    <button onclick="load()">🔄 Load danh sách</button>
+    <div id="list" style="margin-top:10px;"></div>
+
   </div>
 
 <script>
@@ -185,6 +209,10 @@ let k="";
 
 function login(){
   k = document.getElementById('key').value;
+  if(!k){
+    alert("Nhập admin key");
+    return;
+  }
   panel.style.display='block';
 }
 
@@ -193,7 +221,10 @@ async function create(){
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      username:u.value,password:p.value,days:parseInt(d.value),key:k
+      username:u.value,
+      password:p.value,
+      days:parseInt(d.value),
+      key:k
     })
   });
   alert(await r.text());
@@ -204,7 +235,9 @@ async function extend(){
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      username:u2.value,days:parseInt(d2.value),key:k
+      username:u2.value,
+      days:parseInt(d2.value),
+      key:k
     })
   });
   alert(await r.text());
@@ -213,24 +246,31 @@ async function extend(){
 async function load(){
   let r = await fetch('/users?key='+k);
   let d = await r.json();
+
   let html="";
   d.forEach(x=>{
     let date=new Date(parseInt(x.expired_at)).toLocaleDateString();
+
     html+=\`
-    <div>
-      \${x.username} - \${date}
-      <button onclick="del('\${x.username}')">X</button>
+    <div style="border:1px solid #ccc;padding:8px;margin:5px;border-radius:5px">
+      👤 <b>\${x.username}</b><br>
+      ⏰ Hết hạn: \${date}<br>
+      <button onclick="del('\${x.username}')">❌ Xoá</button>
     </div>\`;
   });
+
   list.innerHTML=html;
 }
 
 async function del(u){
+  if(!confirm("Xoá " + u + "?")) return;
+
   let r = await fetch('/delete-user',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({username:u,key:k})
   });
+
   alert(await r.text());
   load();
 }
@@ -241,3 +281,5 @@ async function del(u){
 // ===== START =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("Server chạy cổng " + PORT));
+
+
